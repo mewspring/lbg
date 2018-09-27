@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kr/pretty"
 	"github.com/mewmew/lbg/internal/syntax"
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/buildutil"
@@ -35,6 +36,7 @@ func parse(patterns []string) ([]*build.Package, error) {
 		if err != nil {
 			if _, ok := errors.Cause(err).(*build.NoGoError); ok {
 				// Skip directories without Go files.
+				//log.Printf("skipping directory %q with no Go files", e.Dir)
 				continue
 			}
 			return nil, errors.WithStack(err)
@@ -63,7 +65,16 @@ func fixPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 			ps = append(ps, p)
 		// Relative to parent directory.
 		case pattern == ".." || strings.HasPrefix(pattern, "../"):
-			absPath, err := filepath.Abs("..")
+			p := pattern
+			parents := 0
+			for ; strings.HasPrefix(p, "../"); p = p[len("../"):] {
+				parents++
+			}
+			if p == ".." {
+				parents++
+				p = ""
+			}
+			absPath, err := filepath.Abs(strings.Repeat("../", parents))
 			if err != nil {
 				return nil, errors.WithStack(err)
 			}
@@ -71,13 +82,13 @@ func fixPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 			if err != nil {
 				return nil, errors.WithStack(err)
 			}
-			p := fmt.Sprintf("%s%s", pkgPath, pattern[len(".."):])
-			ps = append(ps, p)
+			ps = append(ps, strings.Join([]string{pkgPath, p}, "/"))
 		// Use pattern as is.
 		default:
 			ps = append(ps, pattern)
 		}
 	}
+	pretty.Println("patterns:", ps)
 	return ps, nil
 }
 

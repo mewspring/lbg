@@ -1,3 +1,4 @@
+// The Little Big Go compiler adventure.
 package main
 
 import (
