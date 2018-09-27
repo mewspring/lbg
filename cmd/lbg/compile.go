@@ -29,6 +29,7 @@ func compile(pkg *build.Package) error {
 	c.files = files
 	//fmt.Println()
 	c.compile()
+	pretty.Println("module:", c.curModule)
 	return nil
 }
 
@@ -50,14 +51,15 @@ type compiler struct {
 
 func newCompiler(pkg *build.Package) *compiler {
 	return &compiler{
-		pkg:       pkg,
-		curModule: &ir.Module{}, // TODO: use ir.NewModule()
-		curFunc:   nil,
-		curBlock:  nil,
+		pkg: pkg,
 	}
 }
 
 func (c *compiler) compile() {
+	// Create module.
+	c.curModule = &ir.Module{
+		SourceFilename: fmt.Sprintf("%s", c.pkg.ImportPath),
+	}
 	// TODO: implement identifier resolution
 	// TODO: implement type resolution
 	// TODO: implement type checking
