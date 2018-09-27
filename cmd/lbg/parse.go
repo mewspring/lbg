@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"go/build"
+	"log"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/mewmew/lbg/internal/syntax"
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/buildutil"
 )
@@ -104,4 +106,18 @@ func parsePkg(ctxt *build.Context, pkgPath string) (*build.Package, error) {
 		return pkg, nil
 	}
 	return nil, errors.Errorf("unable to locate package %q in Go src directories `%s`", pkgPath, ctxt.SrcDirs())
+}
+
+// parseFile parses the given Go file.
+func parseFile(pkg *build.Package, goFile string) (*syntax.File, error) {
+	absGoPath := filepath.Join(pkg.Dir, goFile)
+	mode := syntax.CheckBranches
+	errh := func(err error) {
+		log.Printf("compile error: %v", err)
+	}
+	file, err := syntax.ParseFile(absGoPath, errh, nil, mode)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return file, nil
 }
