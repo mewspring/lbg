@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"go/build"
+	"log"
 
 	"github.com/kr/pretty"
 	"github.com/llir/l/ir"
+	"github.com/llir/l/ir/types"
 	"github.com/mewmew/lbg/internal/syntax"
 	"github.com/pkg/errors"
 )
@@ -58,14 +60,47 @@ func newCompiler(pkg *build.Package) *compiler {
 func (c *compiler) compile() {
 	// Create module.
 	c.curModule = &ir.Module{
-		SourceFilename: fmt.Sprintf("%s", c.pkg.ImportPath),
+		SourceFilename: c.pkg.ImportPath,
 	}
 	// TODO: implement identifier resolution
+	//    - map[pos]value
+	//    - *syntax.Name
+	//    - *syntax.SelectorExpr
 	// TODO: implement type resolution
+	//    - map[pos]type
 	// TODO: implement type checking
 	for _, file := range c.files {
 		for _, decl := range file.DeclList {
+			switch decl := decl.(type) {
+			case *syntax.VarDecl:
+			// TODO: translate Go type to LLVM IR.
+			//for _, name := range decl.NameList {
+			//}
+			//c.curModule.NewGlobalDef(name, init)
+			case *syntax.FuncDecl:
+				c.funcDecl(decl)
+			default:
+				log.Printf("support for %T not yet implemented", decl)
+			}
 			pretty.Println("decl:", decl)
 		}
+	}
+}
+
+func (c *compiler) funcDecl(decl *syntax.FuncDecl) {
+	pretty.Println("func:", decl)
+	pretty.Println("func type:", llType(decl.Type))
+	// TODO: translate Go results type to LLVM IR.
+	retType := types.Void
+	f := c.curModule.NewFunction(decl.Name.Value, retType)
+	for _, param := range decl.Type.ParamList {
+		// TODO: use ir.NewParam, or even ir.Function.NewParam?
+		// TODO: translate Go function parameter type to LLVM IR.
+		typ := types.I32
+		p := &ir.Param{
+			ParamName: param.Name.Value,
+			Typ:       typ,
+		}
+		f.Params = append(f.Params, p)
 	}
 }
