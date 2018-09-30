@@ -42,6 +42,8 @@ type compiler struct {
 	pkg   *build.Package
 	files []*syntax.File
 
+	imports []*build.Package
+
 	curModule *ir.Module
 	curFunc   *ir.Function
 	curBlock  *ir.BasicBlock
@@ -58,6 +60,8 @@ func newCompiler(pkg *build.Package) *compiler {
 }
 
 func (c *compiler) compile() {
+	// Initialize universal scope.
+	//c.curScope = NewScope(universe)
 	// Create module.
 	c.curModule = &ir.Module{
 		SourceFilename: c.pkg.ImportPath,
@@ -89,7 +93,7 @@ func (c *compiler) compile() {
 
 func (c *compiler) funcDecl(decl *syntax.FuncDecl) {
 	pretty.Println("func:", decl)
-	pretty.Println("func type:", llType(decl.Type))
+	pretty.Println("func type:", c.llType(decl.Type))
 	// TODO: translate Go results type to LLVM IR.
 	retType := types.Void
 	f := c.curModule.NewFunction(decl.Name.Value, retType)

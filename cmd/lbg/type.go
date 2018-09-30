@@ -8,12 +8,12 @@ import (
 )
 
 // llType translates the given Go type to an equivalent LLVM IR type.
-func llType(t syntax.Expr) types.Type {
+func (c *compiler) llType(t syntax.Expr) types.Type {
 	switch t := t.(type) {
 	case *syntax.Name:
-		return llNamedType(t)
+		return c.llNamedType(t)
 	case *syntax.FuncType:
-		return llFuncType(t)
+		return c.llFuncType(t)
 	default:
 		panic(fmt.Errorf("support for %T not yet implemented", t))
 	}
@@ -122,29 +122,29 @@ func createUniverseTypes() map[string]types.Type {
 }
 
 // llNamedType translates the given named Go type to an equivalent LLVM IR type.
-func llNamedType(t *syntax.Name) types.Type {
-	universe := createUniverseTypes()
+func (c *compiler) llNamedType(t *syntax.Name) types.Type {
+	//universe := createUniverseTypes()
 	// TODO: resolve identifiers from scope, where the universe scope would
 	// contain the predeclared types
-	if typ, ok := universe[t.Value]; ok {
-		return typ
-	}
+	//if typ, ok := c.scope.findType(t.Value); ok {
+	//	return typ
+	//}
 	panic(fmt.Errorf("support for named type %q not yet implemented", t.Value))
 }
 
 // llFuncType translates the given Go function type to an equivalent LLVM IR
 // type.
-func llFuncType(t *syntax.FuncType) *types.FuncType {
+func (c *compiler) llFuncType(t *syntax.FuncType) *types.FuncType {
 	var retType types.Type
 	switch len(t.ResultList) {
 	case 0:
 		retType = types.Void
 	case 1:
-		retType = llType(t.ResultList[0].Type)
+		retType = c.llType(t.ResultList[0].Type)
 	default:
 		var resultTypes []types.Type
 		for _, result := range t.ResultList {
-			resultType := llType(result.Type)
+			resultType := c.llType(result.Type)
 			resultTypes = append(resultTypes, resultType)
 		}
 		retType = types.NewStruct(resultTypes...)
@@ -160,7 +160,7 @@ func llFuncType(t *syntax.FuncType) *types.FuncType {
 			variadic = true
 			continue
 		}
-		paramType := llType(param.Type)
+		paramType := c.llType(param.Type)
 		paramTypes = append(paramTypes, paramType)
 	}
 	typ := types.NewFunc(retType, paramTypes...)
