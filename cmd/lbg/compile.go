@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"go/build"
 	"log"
+	"sort"
 
 	"github.com/kr/pretty"
 	"github.com/llir/l/ir"
@@ -12,30 +12,98 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Compile compiles the given parsed Go packages into LLVM IR modules.
+func Compile(pkgs map[string]*Package) (map[string]*ir.Module, error) {
+	dbg.Println("compile:")
+	c := NewCompiler(pkgs)
+
+	// Compile pseudo-package builtin for predeclared identifiers.
+	c.push("builtin")
+	if err := c.Compile(); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	// TODO: Resolve predeclared identifiers of the universe scope.
+	//c.Resolve()
+
+	var pkgPaths []string
+	for pkgPath := range c.pkgs {
+		pkgPaths = append(pkgPaths, pkgPath)
+	}
+	sort.Strings(pkgPaths)
+	for _, pkgPath := range pkgPaths {
+		c.push(pkgPath)
+		if err := c.Compile(); err != nil {
+			return nil, errors.WithStack(err)
+		}
+	}
+	return c.modules, nil
+}
+
 // Compiler tracks information required to compile a set of Go packages.
 type Compiler struct {
 	// Maps from Go package path to parsed Go package.
 	pkgs map[string]*Package
+	// Map from Go package path to output LLVM IR module.
+	modules map[string]*ir.Module
+	// Universe scope of resolved predeclared identifiers.
+	universe *Scope
+	// Stack of packages to compile; the package on top of the stack has no
+	// unresolved dependencies.
+	stack Stack
 }
 
 // NewCompiler returns a new compiler for the given parsed Go packages.
 func NewCompiler(pkgs map[string]*Package) *Compiler {
 	return &Compiler{
-		pkgs: pkgs,
+		pkgs:    pkgs,
+		modules: make(map[string]*ir.Module),
 	}
 }
 
-// Compile compiles the set of parsed Go packages.
+// Compile compiles the set of parsed Go packages in the stack of packages to
+// compile, starting with the top element.
 func (c *Compiler) Compile() error {
-	fmt.Println("compile:")
-	pretty.Println(c.pkgs)
-	// Resolve identifiers.
-	c.Resolve()
+	dbg.Println("compile:")
+	for !c.stack.Empty() {
+		pkgPath := c.stack.Pop()
+		dbg.Println("   pop:", pkgPath)
+		pkg := c.pkgs[pkgPath]
+		if err := c.compile(pkg); err != nil {
+			return errors.WithStack(err)
+		}
+	}
 	return nil
 }
 
+// compile compiles the given parsed Go packages.
+func (c *Compiler) compile(pkg *Package) error {
+	c.modules[pkg.ImportPath] = &ir.Module{}
+	return nil
+}
+
+// push pushes the given Go package and its transitive dependencies onto the top
+// of the stack of packages to compile, those packages which are not yet
+// compiled and not yet present in the stack.
+func (c *Compiler) push(pkgPath string) {
+	if c.stack.Contains(pkgPath) {
+		return
+	}
+	if _, ok := c.modules[pkgPath]; ok {
+		return
+	}
+	c.stack.Push(pkgPath)
+	dbg.Println("   push:", pkgPath)
+	pkg := c.pkgs[pkgPath]
+	for _, importPkgPath := range pkg.Imports {
+		c.push(importPkgPath)
+	}
+}
+
+//func (c *Compiler) CompilePackage()
+
 // ### [ cleanup below ] ###
 
+/*
 // compile compiles the given Go package.
 func compile(pkg *build.Package) error {
 	c := newCompiler(pkg)
@@ -58,6 +126,7 @@ func compile(pkg *build.Package) error {
 	pretty.Println("module:", c.curModule)
 	return nil
 }
+*/
 
 // Compiler tracks information related to the compilation of a specific Go
 // package.

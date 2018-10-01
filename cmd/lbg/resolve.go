@@ -30,4 +30,5 @@ func (c *Compiler) Resolve() {
 			}
 		}
 	}
+	c.universe = universe
 }

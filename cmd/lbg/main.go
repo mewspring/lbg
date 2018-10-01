@@ -3,12 +3,37 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"os"
+
+	"github.com/mewkiz/pkg/term"
 )
+
+var (
+	// dbg represents a logger with the "lbg:" prefix, which logs debug messages
+	// to standard error.
+	dbg = log.New(os.Stderr, term.MagentaBold("lbg:")+" ", 0)
+	// warn represents a logger with the "warning:" prefix, which logs warning
+	// messages to standard error.
+	warn = log.New(os.Stderr, term.RedBold("warning:")+" ", 0)
+)
+
+func usage() {
+	const use = `
+Usage: lbg [OPTION]... [packages]`
+	fmt.Fprintln(os.Stderr, use[1:])
+	flag.PrintDefaults()
+}
 
 func main() {
 	// Parse command line arguments.
+	flag.Usage = usage
 	flag.Parse()
+	if flag.NArg() == 0 {
+		flag.Usage()
+		os.Exit(1)
+	}
 	patterns := flag.Args()
 
 	// Parse Go packages specified by patterns.
@@ -16,9 +41,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("%+v", err)
 	}
-	// Compile Go packages.
-	c := NewCompiler(pkgs)
-	if err := c.Compile(); err != nil {
+	// Compile Go packages into LLVM IR modules.
+	modules, err := Compile(pkgs)
+	if err != nil {
 		log.Fatalf("%+v", err)
 	}
+	_ = modules
 }
