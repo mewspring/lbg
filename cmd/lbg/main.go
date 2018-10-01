@@ -7,15 +7,18 @@ import (
 )
 
 func main() {
+	// Parse command line arguments.
 	flag.Parse()
 	patterns := flag.Args()
-	pkgs, err := parse(patterns)
+
+	// Parse Go packages specified by patterns.
+	pkgs, err := Parse(patterns)
 	if err != nil {
 		log.Fatalf("%+v", err)
 	}
-	for _, pkg := range pkgs {
-		if err := compile(pkg); err != nil {
-			log.Fatalf("%+v", err)
-		}
+	// Compile Go packages.
+	c := NewCompiler(pkgs)
+	if err := c.Compile(); err != nil {
+		log.Fatalf("%+v", err)
 	}
 }

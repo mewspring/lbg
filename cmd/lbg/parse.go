@@ -14,12 +14,80 @@ import (
 	"golang.org/x/tools/go/buildutil"
 )
 
-// parse parses the set of Go packages specified by the given patterns.
-func parse(patterns []string) ([]*build.Package, error) {
+// Parse parses the Go packages specified by the given patterns.
+func Parse(patterns []string) (map[string]*Package, error) {
+	p := NewParser(&build.Default)
+	pkgPaths, err := expandPatterns(p.ctxt, patterns)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	for _, pkgPath := range pkgPaths {
+		p.push(pkgPath)
+	}
+	if err := p.Parse(); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return p.pkgs, nil
+}
+
+// Parser parses Go packages.
+type Parser struct {
+	// Tracks build context information (e.g. Go source directories).
+	ctxt *build.Context
+	// Maps from Go package path to parsed Go package.
+	pkgs map[string]*Package
+	// Queue of packages to parse.
+	queue Queue
+}
+
+// NewParser returns a new parser for parsing Go packages.
+func NewParser(ctxt *build.Context) *Parser {
+	return &Parser{
+		ctxt: ctxt,
+		pkgs: make(map[string]*Package),
+	}
+}
+
+// Parse parses the queued Go packages and their transitive imports.
+func (p *Parser) Parse() error {
+	for !p.queue.Empty() {
+		pkgPath := p.queue.Pop()
+		pkg, err := parsePkg(p.ctxt, pkgPath)
+		if err != nil {
+			if _, ok := errors.Cause(err).(*build.NoGoError); ok {
+				// Skip directories without Go files.
+				//log.Printf("skipping directory %q with no Go files", e.Dir)
+				continue
+			}
+			return errors.WithStack(err)
+		}
+		p.pkgs[pkgPath] = pkg
+		for _, importPkgPath := range pkg.Imports {
+			p.push(importPkgPath)
+		}
+	}
+	return nil
+}
+
+// push pushes the given Go package path onto the queue of packages to parse, if
+// the package is not yet parsed and not yet present in the queue.
+func (p *Parser) push(pkgPath string) {
+	if p.queue.Contains(pkgPath) {
+		return
+	}
+	if _, ok := p.pkgs[pkgPath]; ok {
+		return
+	}
+	p.queue.Push(pkgPath)
+}
+
+// ### [ Helper functions ] ####################################################
+
+// expandPatterns returns the Go package paths specified by the given patterns.
+func expandPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 	// Note, relative patterns (e.g. "." and "../") are not yet well supported by
 	// buildutil.ExpandPatterns. There is a TODO in that package to extend
 	// support, but for now, we use our own implementation.
-	ctxt := &build.Default
 	ps, err := fixPatterns(ctxt, patterns)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -30,21 +98,11 @@ func parse(patterns []string) ([]*build.Package, error) {
 		pkgPaths = append(pkgPaths, pkgPath)
 	}
 	sort.Strings(pkgPaths)
-	var pkgs []*build.Package
-	for _, pkgPath := range pkgPaths {
-		pkg, err := parsePkg(ctxt, pkgPath)
-		if err != nil {
-			if _, ok := errors.Cause(err).(*build.NoGoError); ok {
-				// Skip directories without Go files.
-				//log.Printf("skipping directory %q with no Go files", e.Dir)
-				continue
-			}
-			return nil, errors.WithStack(err)
-		}
-		pkgs = append(pkgs, pkg)
-	}
-	return pkgs, nil
+	return pkgPaths, nil
 }
+
+// TODO: remove fixPatterns once buildutil.ExpandPatterns handles relative
+// patterns.
 
 // fixPatterns translates relative import patterns to qualified import patterns.
 func fixPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
@@ -108,11 +166,22 @@ func findPkgPath(ctxt *build.Context, absPath string) (string, error) {
 }
 
 // parsePkg parses the given Go package.
-func parsePkg(ctxt *build.Context, pkgPath string) (*build.Package, error) {
+func parsePkg(ctxt *build.Context, pkgPath string) (*Package, error) {
 	for _, srcDir := range ctxt.SrcDirs() {
-		pkg, err := ctxt.Import(pkgPath, srcDir, build.ImportComment)
+		goPkg, err := ctxt.Import(pkgPath, srcDir, build.ImportComment)
 		if err != nil {
 			return nil, errors.WithStack(err)
+		}
+		pkg := &Package{
+			Package: goPkg,
+			files:   make(map[string]*syntax.File),
+		}
+		for _, goFile := range pkg.GoFiles {
+			file, err := parseFile(goPkg, goFile)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+			pkg.files[goFile] = file
 		}
 		return pkg, nil
 	}

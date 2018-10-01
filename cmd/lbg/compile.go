@@ -12,6 +12,28 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Compiler tracks information required to compile a set of Go packages.
+type Compiler struct {
+	// Maps from Go package path to parsed Go package.
+	pkgs map[string]*Package
+}
+
+// NewCompiler returns a new compiler for the given parsed Go packages.
+func NewCompiler(pkgs map[string]*Package) *Compiler {
+	return &Compiler{
+		pkgs: pkgs,
+	}
+}
+
+// Compile compiles the set of parsed Go packages.
+func (c *Compiler) Compile() error {
+	fmt.Println("compile:")
+	pretty.Println(c.pkgs)
+	return nil
+}
+
+// ### [ cleanup below ] ###
+
 // compile compiles the given Go package.
 func compile(pkg *build.Package) error {
 	c := newCompiler(pkg)
@@ -38,6 +60,9 @@ func compile(pkg *build.Package) error {
 // Compiler tracks information related to the compilation of a specific Go
 // package.
 type compiler struct {
+	// Maps from Go package path to parsed Go package.
+	pkgs map[string]*Package
+
 	// Go package.
 	pkg   *build.Package
 	files []*syntax.File
