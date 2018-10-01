@@ -15,7 +15,10 @@ type Scope struct {
 
 // NewScope returns a new scope nested in the given outer scope.
 func NewScope(outer *Scope) *Scope {
-	return &Scope{outer: outer}
+	return &Scope{
+		outer: outer,
+		decls: make(map[string]syntax.Decl),
+	}
 }
 
 /*

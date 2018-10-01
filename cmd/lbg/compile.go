@@ -29,6 +29,8 @@ func NewCompiler(pkgs map[string]*Package) *Compiler {
 func (c *Compiler) Compile() error {
 	fmt.Println("compile:")
 	pretty.Println(c.pkgs)
+	// Resolve identifiers.
+	c.Resolve()
 	return nil
 }
 

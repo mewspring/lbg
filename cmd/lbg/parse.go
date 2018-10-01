@@ -24,6 +24,8 @@ func Parse(patterns []string) (map[string]*Package, error) {
 	for _, pkgPath := range pkgPaths {
 		p.push(pkgPath)
 	}
+	// Parse pseudo-package builtin for predeclared identifiers.
+	p.push("builtin")
 	if err := p.Parse(); err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -62,6 +64,8 @@ func (p *Parser) Parse() error {
 			return errors.WithStack(err)
 		}
 		p.pkgs[pkgPath] = pkg
+		// TODO: check if there exists an exports data file for the Go package, to
+		// avoid re-parsing.
 		for _, importPkgPath := range pkg.Imports {
 			p.push(importPkgPath)
 		}
