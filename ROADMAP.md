@@ -11,5 +11,8 @@ Handle dependencies and scope.
 - [x] examples/empty_package
 - [ ] examples/exported_function
 - [ ] examples/exported_global
+- [ ] examples/multiple_returns
+- [ ] examples/package_import
 - [ ] examples/unexported_function
 - [ ] examples/unexported_global
+- [ ] examples/variadic_function
