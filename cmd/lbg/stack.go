@@ -1,6 +1,6 @@
 package main
 
-// Stack is a stack of strings.
+// Stack is a stack of string elements.
 //
 // The zero value for Stack is an empty stack ready to use.
 type Stack []string

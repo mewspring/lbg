@@ -22,10 +22,10 @@ func Parse(patterns []string) (map[string]*Package, error) {
 		return nil, errors.WithStack(err)
 	}
 	for _, pkgPath := range pkgPaths {
-		p.push(pkgPath)
+		p.push(Elem{PkgPath: pkgPath})
 	}
 	// Parse pseudo-package builtin for predeclared identifiers.
-	p.push("builtin")
+	p.push(Elem{PkgPath: "builtin"})
 	if err := p.Parse(); err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -53,8 +53,8 @@ func NewParser(ctxt *build.Context) *Parser {
 // Parse parses the queued Go packages and their transitive imports.
 func (p *Parser) Parse() error {
 	for !p.queue.Empty() {
-		pkgPath := p.queue.Pop()
-		pkg, err := parsePkg(p.ctxt, pkgPath)
+		elem := p.queue.Pop()
+		pkg, err := parsePkg(p.ctxt, elem.PkgPath, elem.ImporterDir)
 		if err != nil {
 			if _, ok := errors.Cause(err).(*build.NoGoError); ok {
 				// Skip directories without Go files.
@@ -63,11 +63,15 @@ func (p *Parser) Parse() error {
 			}
 			return errors.WithStack(err)
 		}
-		p.pkgs[pkgPath] = pkg
+		p.pkgs[elem.PkgPath] = pkg
 		// TODO: check if there exists an exports data file for the Go package, to
 		// avoid re-parsing.
 		for _, importPkgPath := range pkg.Imports {
-			p.push(importPkgPath)
+			elem := Elem{
+				PkgPath:     importPkgPath,
+				ImporterDir: pkg.Dir,
+			}
+			p.push(elem)
 		}
 	}
 	return nil
@@ -75,14 +79,14 @@ func (p *Parser) Parse() error {
 
 // push pushes the given Go package path onto the queue of packages to parse, if
 // the package is not yet parsed and not yet present in the queue.
-func (p *Parser) push(pkgPath string) {
-	if p.queue.Contains(pkgPath) {
+func (p *Parser) push(elem Elem) {
+	if p.queue.Contains(elem) {
 		return
 	}
-	if _, ok := p.pkgs[pkgPath]; ok {
+	if _, ok := p.pkgs[elem.PkgPath]; ok {
 		return
 	}
-	p.queue.Push(pkgPath)
+	p.queue.Push(elem)
 }
 
 // ### [ Helper functions ] ####################################################
@@ -102,6 +106,7 @@ func expandPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 		pkgPaths = append(pkgPaths, pkgPath)
 	}
 	sort.Strings(pkgPaths)
+	fmt.Println("pkgPaths:", pkgPaths)
 	return pkgPaths, nil
 }
 
@@ -169,27 +174,32 @@ func findPkgPath(ctxt *build.Context, absPath string) (string, error) {
 	return "", errors.Errorf("unable to locate %q in Go src directories `%s`", absPath, ctxt.SrcDirs())
 }
 
-// parsePkg parses the given Go package.
-func parsePkg(ctxt *build.Context, pkgPath string) (*Package, error) {
-	for _, srcDir := range ctxt.SrcDirs() {
-		goPkg, err := ctxt.Import(pkgPath, srcDir, build.ImportComment)
+// parsePkg parses the given Go package. The importer directory is used if
+// package has a relative import or is in vendor directory. An empty import
+// directory is used if the package is compiled stand-alone and not imported by
+// another package.
+func parsePkg(ctxt *build.Context, pkgPath string, importerDir string) (*Package, error) {
+	if pkgPath == "C" {
+		// TODO: figure out how to support cgo.
+		return &Package{Package: &build.Package{ImportPath: "C"}}, nil
+	}
+	goPkg, err := ctxt.Import(pkgPath, importerDir, build.ImportComment)
+	fmt.Printf("err (%s): %v\n", pkgPath, err)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	pkg := &Package{
+		Package: goPkg,
+		files:   make(map[string]*syntax.File),
+	}
+	for _, goFile := range pkg.GoFiles {
+		file, err := parseFile(goPkg, goFile)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
-		pkg := &Package{
-			Package: goPkg,
-			files:   make(map[string]*syntax.File),
-		}
-		for _, goFile := range pkg.GoFiles {
-			file, err := parseFile(goPkg, goFile)
-			if err != nil {
-				return nil, errors.WithStack(err)
-			}
-			pkg.files[goFile] = file
-		}
-		return pkg, nil
+		pkg.files[goFile] = file
 	}
-	return nil, errors.Errorf("unable to locate package %q in Go src directories `%s`", pkgPath, ctxt.SrcDirs())
+	return pkg, nil
 }
 
 // parseFile parses the given Go file.
