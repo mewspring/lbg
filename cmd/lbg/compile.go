@@ -3,18 +3,26 @@ package main
 import (
 	"go/build"
 	"log"
+	"os"
 	"sort"
 
 	"github.com/kr/pretty"
 	"github.com/llir/l/ir"
 	"github.com/llir/l/ir/types"
+	"github.com/mewkiz/pkg/term"
 	"github.com/mewmew/lbg/internal/syntax"
 	"github.com/pkg/errors"
 )
 
+var (
+	// dbg2 is a logger with the "compile:" prefix, which logs debug messages to
+	// standard error.
+	dbg2 = log.New(os.Stderr, term.CyanBold("compile:")+" ", 0)
+)
+
 // Compile compiles the given parsed Go packages into LLVM IR modules.
 func Compile(pkgs map[string]*Package) (map[string]*ir.Module, error) {
-	dbg.Println("compile:")
+	dbg2.Println("compile:")
 	c := NewCompiler(pkgs)
 
 	// Compile pseudo-package builtin for predeclared identifiers.
@@ -63,10 +71,10 @@ func NewCompiler(pkgs map[string]*Package) *Compiler {
 // Compile compiles the set of parsed Go packages in the stack of packages to
 // compile, starting with the top element.
 func (c *Compiler) Compile() error {
-	dbg.Println("compile:")
+	dbg2.Println("compile:")
 	for !c.stack.Empty() {
 		pkgPath := c.stack.Pop()
-		dbg.Println("   pop:", pkgPath)
+		dbg2.Println("   pop:", pkgPath)
 		pkg := c.pkgs[pkgPath]
 		if err := c.compile(pkg); err != nil {
 			return errors.WithStack(err)
@@ -92,7 +100,7 @@ func (c *Compiler) push(pkgPath string) {
 		return
 	}
 	c.stack.Push(pkgPath)
-	dbg.Println("   push:", pkgPath)
+	dbg2.Println("   push:", pkgPath)
 	pkg := c.pkgs[pkgPath]
 	for _, importPkgPath := range pkg.Imports {
 		c.push(importPkgPath)

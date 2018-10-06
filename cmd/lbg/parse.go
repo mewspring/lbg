@@ -4,18 +4,29 @@ import (
 	"fmt"
 	"go/build"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/kr/pretty"
+	"github.com/mewkiz/pkg/term"
 	"github.com/mewmew/lbg/internal/syntax"
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/buildutil"
 )
 
+var (
+	// dbg1 is a logger with the "parse:" prefix, which logs debug messages to
+	// standard error.
+	dbg1 = log.New(os.Stderr, term.MagentaBold("parse:")+" ", 0)
+)
+
 // Parse parses the Go packages specified by the given patterns.
 func Parse(patterns []string) (map[string]*Package, error) {
+	dbg1.Println("patterns:")
+	for _, pattern := range patterns {
+		dbg1.Printf("   %v", pattern)
+	}
 	p := NewParser(&build.Default)
 	pkgPaths, err := expandPatterns(p.ctxt, patterns)
 	if err != nil {
@@ -100,13 +111,20 @@ func expandPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	dbg1.Println("patterns (fixed):")
+	for _, p := range ps {
+		dbg1.Printf("   %v", p)
+	}
 	m := buildutil.ExpandPatterns(ctxt, ps)
 	var pkgPaths []string
 	for pkgPath := range m {
 		pkgPaths = append(pkgPaths, pkgPath)
 	}
 	sort.Strings(pkgPaths)
-	fmt.Println("pkgPaths:", pkgPaths)
+	dbg1.Println("package paths:")
+	for _, pkgPath := range pkgPaths {
+		dbg1.Printf("   %v", pkgPath)
+	}
 	return pkgPaths, nil
 }
 
@@ -155,7 +173,6 @@ func fixPatterns(ctxt *build.Context, patterns []string) ([]string, error) {
 			ps = append(ps, pattern)
 		}
 	}
-	pretty.Println("patterns:", ps)
 	return ps, nil
 }
 
@@ -179,12 +196,12 @@ func findPkgPath(ctxt *build.Context, absPath string) (string, error) {
 // directory is used if the package is compiled stand-alone and not imported by
 // another package.
 func parsePkg(ctxt *build.Context, pkgPath string, importerDir string) (*Package, error) {
+	dbg1.Println("parsing package:", pkgPath)
 	if pkgPath == "C" {
 		// TODO: figure out how to support cgo.
 		return &Package{Package: &build.Package{ImportPath: "C"}}, nil
 	}
 	goPkg, err := ctxt.Import(pkgPath, importerDir, build.ImportComment)
-	fmt.Printf("err (%s): %v\n", pkgPath, err)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -204,6 +221,7 @@ func parsePkg(ctxt *build.Context, pkgPath string, importerDir string) (*Package
 
 // parseFile parses the given Go file.
 func parseFile(pkg *build.Package, goFile string) (*syntax.File, error) {
+	dbg1.Println("   parsing file:", goFile)
 	absGoPath := filepath.Join(pkg.Dir, goFile)
 	mode := syntax.CheckBranches
 	errh := func(err error) {

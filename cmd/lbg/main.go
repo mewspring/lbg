@@ -11,9 +11,6 @@ import (
 )
 
 var (
-	// dbg is a logger with the "lbg:" prefix, which logs debug messages to
-	// standard error.
-	dbg = log.New(os.Stderr, term.MagentaBold("lbg:")+" ", 0)
 	// warn is a logger with the "warning:" prefix, which logs warning messages
 	// to standard error.
 	warn = log.New(os.Stderr, term.RedBold("warning:")+" ", 0)
