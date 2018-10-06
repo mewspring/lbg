@@ -18,7 +18,12 @@ var (
 
 func usage() {
 	const use = `
-Usage: lbg [OPTION]... [packages]`
+Usage: lbg [OPTION]... [packages]
+
+Little Big Go compiles and installs the packages named by the import paths.
+
+For more about specifying packages, see 'go help packages'.
+`
 	fmt.Fprintln(os.Stderr, use[1:])
 	flag.PrintDefaults()
 }
