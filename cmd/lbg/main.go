@@ -39,7 +39,7 @@ func main() {
 	patterns := flag.Args()
 
 	// Parse Go packages specified by patterns.
-	pkgs, err := Parse(patterns)
+	pkgs, err := Parse(patterns...)
 	if err != nil {
 		log.Fatalf("%+v", err)
 	}
@@ -48,5 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%+v", err)
 	}
-	_ = modules
+	for _, m := range modules {
+		fmt.Println(m)
+	}
 }

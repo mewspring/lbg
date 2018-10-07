@@ -1,3 +1,5 @@
+//+build ignore
+
 package main
 
 import (
@@ -5,10 +7,11 @@ import (
 
 	"github.com/llir/l/ir/types"
 	"github.com/mewmew/lbg/internal/syntax"
+	"github.com/mewmew/uc/ast"
 )
 
 // llType translates the given Go type to an equivalent LLVM IR type.
-func (c *compiler) llType(t syntax.Expr) types.Type {
+func (c *compiler) llType(t ast.Expr) types.Type {
 	switch t := t.(type) {
 	case *syntax.Name:
 		return c.llNamedType(t)

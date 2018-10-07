@@ -1,17 +1,15 @@
 package main
 
 import (
-	"go/build"
+	"fmt"
+	"go/ast"
 	"log"
 	"os"
 	"sort"
 
-	"github.com/kr/pretty"
 	"github.com/llir/l/ir"
-	"github.com/llir/l/ir/types"
 	"github.com/mewkiz/pkg/term"
-	"github.com/mewmew/lbg/internal/syntax"
-	"github.com/pkg/errors"
+	"golang.org/x/tools/go/packages"
 )
 
 var (
@@ -21,194 +19,164 @@ var (
 )
 
 // Compile compiles the given parsed Go packages into LLVM IR modules.
-func Compile(pkgs map[string]*Package) (map[string]*ir.Module, error) {
-	dbg2.Println("compile:")
+func Compile(pkgs []*packages.Package) ([]*ir.Module, error) {
+	dbg2.Println("packages (post-order):")
 	c := NewCompiler(pkgs)
 
 	// Compile pseudo-package builtin for predeclared identifiers.
-	c.push("builtin")
-	if err := c.Compile(); err != nil {
-		return nil, errors.WithStack(err)
+	dbg2.Println("   id:", "builtin")
+	c.modules["builtin"] = &ir.Module{
+		SourceFilename: "builtin",
 	}
-	// TODO: Resolve predeclared identifiers of the universe scope.
-	//c.Resolve()
+	// TODO: handle "builtin"
 
-	var pkgPaths []string
-	for pkgPath := range c.pkgs {
-		pkgPaths = append(pkgPaths, pkgPath)
+	post := func(pkg *packages.Package) {
+		dbg2.Println("   id:", pkg.ID)
+		c.compile(pkg)
 	}
-	sort.Strings(pkgPaths)
-	for _, pkgPath := range pkgPaths {
-		c.push(pkgPath)
-		if err := c.Compile(); err != nil {
-			return nil, errors.WithStack(err)
-		}
+	packages.Visit(pkgs, nil, post)
+
+	// Return LLVM IR modules.
+	var ids []string
+	for id := range c.modules {
+		ids = append(ids, id)
 	}
-	return c.modules, nil
+	sort.Strings(ids)
+	var ms []*ir.Module
+	for _, id := range ids {
+		m := c.modules[id]
+		ms = append(ms, m)
+	}
+	return ms, nil
 }
 
 // Compiler tracks information required to compile a set of Go packages.
 type Compiler struct {
-	// Maps from Go package path to parsed Go package.
-	pkgs map[string]*Package
-	// Map from Go package path to output LLVM IR module.
+	// Maps from Go package ID to parsed Go package.
+	pkgs map[string]*packages.Package
+	// Map from Go package ID to output LLVM IR module.
 	modules map[string]*ir.Module
-	// Universe scope of resolved predeclared identifiers.
-	universe *Scope
-	// Stack of packages to compile; the package on top of the stack has no
-	// unresolved dependencies.
-	stack Stack
+
+	// reset after compiling each package.
+	curPkg    *packages.Package
+	curModule *ir.Module
+
+	// reset after compiling each function.
+	curFunc  *ir.Function
+	curBlock *ir.BasicBlock
 }
 
 // NewCompiler returns a new compiler for the given parsed Go packages.
-func NewCompiler(pkgs map[string]*Package) *Compiler {
+func NewCompiler(pkgs []*packages.Package) *Compiler {
+	ps := make(map[string]*packages.Package)
+	for _, pkg := range pkgs {
+		ps[pkg.ID] = pkg
+	}
 	return &Compiler{
-		pkgs:    pkgs,
+		pkgs:    ps,
 		modules: make(map[string]*ir.Module),
 	}
 }
 
-// Compile compiles the set of parsed Go packages in the stack of packages to
-// compile, starting with the top element.
-func (c *Compiler) Compile() error {
-	dbg2.Println("compile:")
-	for !c.stack.Empty() {
-		pkgPath := c.stack.Pop()
-		dbg2.Println("   pop:", pkgPath)
-		pkg := c.pkgs[pkgPath]
-		if err := c.compile(pkg); err != nil {
-			return errors.WithStack(err)
-		}
+// === [ compile ] =============================================================
+
+// compile compiles the given Go package into an LLVM IR module.
+func (c *Compiler) compile(pkg *packages.Package) {
+	// Create LLVM IR module and add scaffolding LLVM IR values for global
+	// variable, function and type declarations.
+	c.indexPackage(pkg)
+
+	// Compile Go source files.
+	for _, file := range pkg.Syntax {
+		c.compileFile(file)
 	}
-	return nil
+
+	// Reset compiler state for the current Go package.
+	c.resetPackage()
 }
 
-// compile compiles the given parsed Go packages.
-func (c *Compiler) compile(pkg *Package) error {
-	c.modules[pkg.ImportPath] = &ir.Module{}
-	return nil
-}
-
-// push pushes the given Go package and its transitive dependencies onto the top
-// of the stack of packages to compile, those packages which are not yet
-// compiled and not yet present in the stack.
-func (c *Compiler) push(pkgPath string) {
-	if c.stack.Contains(pkgPath) {
-		return
-	}
-	if _, ok := c.modules[pkgPath]; ok {
-		return
-	}
-	c.stack.Push(pkgPath)
-	dbg2.Println("   push:", pkgPath)
-	pkg := c.pkgs[pkgPath]
-	for _, importPkgPath := range pkg.Imports {
-		c.push(importPkgPath)
-	}
-}
-
-//func (c *Compiler) CompilePackage()
-
-// ### [ cleanup below ] ###
-
-/*
-// compile compiles the given Go package.
-func compile(pkg *build.Package) error {
-	c := newCompiler(pkg)
-	fmt.Printf("=== [ %s ] ========================\n", pkg.Name)
-	var files []*syntax.File
-	for _, goFile := range pkg.GoFiles {
-		fmt.Printf("   %v\n", goFile)
-		file, err := parseFile(pkg, goFile)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		files = append(files, file)
-		//if err := syntax.Fdump(os.Stderr, file); err != nil {
-		//	return errors.WithStack(err)
-		//}
-	}
-	c.files = files
-	//fmt.Println()
-	c.compile()
-	pretty.Println("module:", c.curModule)
-	return nil
-}
-*/
-
-// Compiler tracks information related to the compilation of a specific Go
-// package.
-type compiler struct {
-	// Maps from Go package path to parsed Go package.
-	pkgs map[string]*Package
-
-	// Go package.
-	pkg   *build.Package
-	files []*syntax.File
-
-	imports []*build.Package
-
-	curModule *ir.Module
-	curFunc   *ir.Function
-	curBlock  *ir.BasicBlock
-	// Maps from package import path to LLVM IR module.
-	//modules map[string]*ir.Module
-	// Maps from qualified identifier to LLVM IR value (function or global).
-	//values map[string]value.Value
-}
-
-func newCompiler(pkg *build.Package) *compiler {
-	return &compiler{
-		pkg: pkg,
-	}
-}
-
-func (c *compiler) compile() {
-	// Initialize universal scope.
-	//c.curScope = NewScope(universe)
-	// Create module.
-	c.curModule = &ir.Module{
-		SourceFilename: c.pkg.ImportPath,
-	}
-	// TODO: implement identifier resolution
-	//    - map[pos]value
-	//    - *syntax.Name
-	//    - *syntax.SelectorExpr
-	// TODO: implement type resolution
-	//    - map[pos]type
-	// TODO: implement type checking
-	for _, file := range c.files {
-		for _, decl := range file.DeclList {
-			switch decl := decl.(type) {
-			case *syntax.VarDecl:
-			// TODO: translate Go type to LLVM IR.
-			//for _, name := range decl.NameList {
-			//}
-			//c.curModule.NewGlobalDef(name, init)
-			case *syntax.FuncDecl:
-				c.funcDecl(decl)
-			default:
-				log.Printf("support for %T not yet implemented", decl)
-			}
-			pretty.Println("decl:", decl)
+// compileFile compiles the given Go source file into an LLVM IR module.
+func (c *Compiler) compileFile(file *ast.File) {
+	for _, decl := range file.Decls {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			c.compileFuncDecl(decl)
+		case *ast.GenDecl:
+			c.compileGenDecl(decl)
+		default:
+			panic(fmt.Errorf("support for declaration %T not yet implemented", decl))
 		}
 	}
 }
 
-func (c *compiler) funcDecl(decl *syntax.FuncDecl) {
-	pretty.Println("func:", decl)
-	pretty.Println("func type:", c.llType(decl.Type))
-	// TODO: translate Go results type to LLVM IR.
-	retType := types.Void
-	f := c.curModule.NewFunction(decl.Name.Value, retType)
-	for _, param := range decl.Type.ParamList {
-		// TODO: use ir.NewParam, or even ir.Function.NewParam?
-		// TODO: translate Go function parameter type to LLVM IR.
-		typ := types.I32
-		p := &ir.Param{
-			ParamName: param.Name.Value,
-			Typ:       typ,
-		}
-		f.Params = append(f.Params, p)
+// --- [ function ] ------------------------------------------------------------
+
+// compileFuncDecl compiles the given function declaration.
+func (c *Compiler) compileFuncDecl(decl *ast.FuncDecl) {
+	//pretty.Println("FuncDecl:", decl)
+}
+
+// compileGenDecl compiles the given generic declaration.
+func (c *Compiler) compileGenDecl(decl *ast.GenDecl) {
+	//pretty.Println("GenDecl:", decl)
+}
+
+// ### [ Helper functions ] ####################################################
+
+// === [ index ] ===============================================================
+
+// indexPackage creates an LLVM IR module for the given Go package, and adds
+// scaffolding LLVM IR values for top-level global variable, function and type
+// declarations.
+func (c *Compiler) indexPackage(pkg *packages.Package) {
+	// Create LLVM IR module.
+	c.curPkg = pkg
+	m := &ir.Module{
+		SourceFilename: pkg.ID,
 	}
+	c.curModule = m
+	c.modules[pkg.ID] = m
+
+	// Create scaffolding LLVM IR values for global variable, function and type
+	// declarations.
+	for _, file := range pkg.Syntax {
+		c.indexFile(file)
+	}
+}
+
+// indexFile adds scaffolding LLVM IR values for top-level global variable,
+// function and type declarations of the given Go file.
+func (c *Compiler) indexFile(file *ast.File) {
+	for _, decl := range file.Decls {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			c.indexFuncDecl(decl)
+		case *ast.GenDecl:
+			c.indexGenDecl(decl)
+		default:
+			panic(fmt.Errorf("support for declaration %T not yet implemented", decl))
+		}
+	}
+}
+
+// --- [ function ] ------------------------------------------------------------
+
+// indexFuncDecl adds scaffolding LLVM IR values for the given function
+// declaration.
+func (c *Compiler) indexFuncDecl(decl *ast.FuncDecl) {
+	//pretty.Println("FuncDecl:", decl)
+}
+
+// indexGenDecl adds scaffolding LLVM IR values for the given generic
+// declaration.
+func (c *Compiler) indexGenDecl(decl *ast.GenDecl) {
+	//pretty.Println("GenDecl:", decl)
+}
+
+// === [ reset ] ===============================================================
+
+// resetPackage resets the compiler state for the current Go package.
+func (c *Compiler) resetPackage() {
+	c.curPkg = nil
+	c.curModule = nil
 }
