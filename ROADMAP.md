@@ -6,7 +6,7 @@
 
 ## v0.1
 
-Handle dependencies and scope.
+Handle resolution of package dependencies, identifiers and types, including support for multiple `GOPATH`s and Go modules.
 
 - [x] examples/empty_package
 - [ ] examples/exported_function
